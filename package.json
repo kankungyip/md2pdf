@@ -1,0 +1,24 @@
+{
+  "name": "md2pdf",
+  "version": "0.1.0",
+  "bin": "./bin/cli.ts",
+  "type": "module",
+  "scripts": {
+    "start": "./bin/cli.ts --concurrency=4 --font-dir='./fonts' --doc-font='AlibabaPuHuiTi-3-55-Regular' --code-font='MapleMonoNormalNL-CN-Regular'",
+    "postinstall": "bun x puppeteer browsers install chrome-headless-shell",
+    "compile": "bun build ./src/index.ts --compile --outfile md-to-pdf"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.1.0",
+    "markdown-it-cjk-friendly": "^3.0.0",
+    "markdown-it-highlightjs": "^4.3.0",
+    "mermaid": "^11.0.0",
+    "puppeteer-core": "^24.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/markdown-it": "^14.0.0",
+    "@types/node": "^24.0.0"
+  }
+}
