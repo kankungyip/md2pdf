@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { parseArgs } from "util";
 import { statSync } from "fs";
 import { convertToPdf } from "./converter";
@@ -16,6 +17,8 @@ const { values, positionals } = parseArgs({
     },
     concurrency: { type: "string", default: "2" },
     "skip-existing": { type: "boolean", default: false },
+    "copy-ext": { type: "string", default: "" },
+    "copy-dir": { type: "string", default: "" },
 
     "doc-font": { type: "string" },
     "code-font": { type: "string" },
@@ -26,7 +29,6 @@ const { values, positionals } = parseArgs({
     "mermaid-theme": { type: "string", default: "default" },
     "executable-path": { type: "string" },
 
-    // 水印
     watermark: { type: "string" },
     "watermark-layout": { type: "string", default: "tile" },
     "watermark-opacity": { type: "string", default: "0.15" },
@@ -45,14 +47,29 @@ if (!input) {
   bun run src/index.ts <file.md>                # 单文件转换
   bun run src/index.ts <dir>                    # 批量递归转换
 
+单文件选项:
+  -o, --output <path>     输出 PDF 路径
+
 批量选项:
-  --suffix <s>            输出文件名后缀 (默认 "", 例如 "-v2" → doc-v2.pdf)
+  -o, --output <dir>      输出根目录。指定后所有 PDF 输出到该目录下，
+                          并保持与输入目录相同的相对路径结构。
+                          不指定则 PDF 与源文件同目录。
+
+  --suffix <s>            输出 PDF 文件名后缀 (默认 "", 例如 "-v2" → doc-v2.pdf)
   --ignore <a,b,c>        忽略的目录/文件名 (默认 node_modules,.git,...)
   --concurrency <n>       并发数 (默认 2)
-  --skip-existing         跳过已存在的 PDF (默认覆盖)
+  --skip-existing         跳过已存在的 PDF 和复制文件 (默认覆盖)
+
+  --copy-ext <exts>       逗号分隔的文件扩展名（不含点）。在整个输入目录树中，
+                          匹配这些扩展名的文件会被复制到 --output 下同相对路径位置。
+                          例如: --copy-ext pdf,txt,json
+
+  --copy-dir <dirs>       逗号分隔的目录名。匹配的目录会被递归扫描：
+                            · 其中的 .md 文件转换为 PDF
+                            · 其他文件全部复制到 --output 下同相对路径位置
+                          例如: --copy-dir assets,images,c
 
 通用选项:
-  -o, --output <path>     单文件模式输出路径
   --font-dir <dir>        自定义字体目录 (.woff2/.woff/.otf/.ttf)
   --doc-font <family>     文档正文字体族，与字体文件名对应
   --code-font <family>    代码字体族，语义同 --doc-font
@@ -64,46 +81,43 @@ if (!input) {
 
 水印选项（不传 --watermark 则不生成水印）:
   --watermark <text>      水印文字
-  --watermark-layout <l>  水印布局 (默认 tile)
-                            tile       多行交错，铺满整页
-                            diagonal   居中斜线一行（angle=0 即为横线一行）
-                            stamp      居中印章，带圆角边框
-  --watermark-opacity <n>      不透明度 0-1 (默认 0.15)
-  --watermark-font-size <pt>   字号 (默认 36)
-  --watermark-color <c>        颜色 (默认 #999999)
-  --watermark-angle <deg>      旋转角度 (默认 -30)
+  --watermark-layout <l>  tile | diagonal | stamp (默认 tile)
+  --watermark-opacity <n> 不透明度 0-1 (默认 0.15)
+  --watermark-font-size <pt> 字号 (默认 36)
+  --watermark-color <c>   颜色 (默认 #999999)
+  --watermark-angle <deg> 旋转角度 (默认 -30)
   --watermark-border-radius <px> 边框圆角，仅 stamp 生效 (默认 12)
   --watermark-border-width <px>  边框宽度，仅 stamp 生效 (默认 4)
 
 示例:
-  # 多行交错
-  bun run src/index.ts doc.md --watermark "内部机密"
+  # 单文件转换
+  bun run src/index.ts doc.md -o out.pdf
 
-  # 居中斜线一行（红色，大字号）
-  bun run src/index.ts doc.md --watermark "仅供内部使用" \\
-    --watermark-layout diagonal --watermark-font-size 80 \\
-    --watermark-color "#cc3333" --watermark-opacity 0.2
+  # 批量转换，PDF 与源文件同目录
+  bun run src/index.ts ./docs
 
-  # 居中横线一行（斜线布局 + angle=0）
-  bun run src/index.ts doc.md --watermark "DRAFT" \\
-    --watermark-layout diagonal --watermark-angle 0 \\
-    --watermark-font-size 100
+  # 批量转换，输出到 dist/ 并保持目录结构
+  bun run src/index.ts ./docs -o dist
 
-  # 印章效果（红色公章，方形边框）
-  bun run src/index.ts doc.md --watermark "已阅" \\
-    --watermark-layout stamp --watermark-color "#c62828" \\
-    --watermark-opacity 0.75 --watermark-font-size 60 \\
-    --watermark-angle -8 --watermark-border-radius 8 \\
-    --watermark-border-width 6
+  # 转换 + 复制 PDF 和 assets 目录
+  bun run src/index.ts ./docs -o dist \\
+    --copy-ext pdf --copy-dir assets
 
-  # 圆形印章
-  bun run src/index.ts doc.md --watermark "机密" \\
-    --watermark-layout stamp --watermark-color "#c62828" \\
-    --watermark-opacity 0.8 --watermark-font-size 52 \\
-    --watermark-border-radius 999 --watermark-border-width 5`);
+  # 复杂场景：c 目录里的 md 转 PDF，其他文件复制
+  #   docs/a/c/c1.md  → dist/a/c/c1.pdf
+  #   docs/a/c/c2.txt → dist/a/c/c2.txt
+  bun run src/index.ts ./docs -o dist --copy-dir c
+
+  # 结合水印与字体
+  bun run src/index.ts ./docs -o dist \\
+    --copy-ext pdf --copy-dir assets \\
+    --watermark "内部机密" --watermark-layout tile \\
+    --font-dir ./fonts --doc-font "MapleMono-NF-CN-Regular" \\
+    --concurrency 4`);
   process.exit(1);
 }
 
+// ── 水印配置 ──
 const watermarkText = values.watermark?.trim();
 const watermark = watermarkText
   ? {
@@ -136,6 +150,7 @@ const convertOpts = {
   watermark,
 };
 
+// ── 输入路径检查 ──
 let stat;
 try {
   stat = statSync(input);
@@ -146,8 +161,18 @@ try {
 
 try {
   if (stat.isDirectory()) {
+    const copyExts = (values["copy-ext"] ?? "")
+      .split(",")
+      .map((s) => s.trim().replace(/^\./, "").toLowerCase())
+      .filter(Boolean);
+    const copyDirs = (values["copy-dir"] ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
     await convertDirectory({
       dir: input,
+      outputDir: values.output,
       suffix: values.suffix ?? "",
       ignore: (values.ignore ?? "")
         .split(",")
@@ -155,6 +180,8 @@ try {
         .filter(Boolean),
       concurrency: Math.max(1, parseInt(values.concurrency ?? "2")),
       skipExisting: !!values["skip-existing"],
+      copyExts,
+      copyDirs,
       convert: convertOpts,
     });
   } else {

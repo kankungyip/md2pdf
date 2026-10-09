@@ -71,10 +71,30 @@ export interface ConvertOptions {
 }
 
 export interface BatchOptions {
+  /** 输入根目录 */
   dir: string;
+  /**
+   * 输出根目录。指定后：
+   *   - PDF 输出到 <outputDir>/<相对路径>.pdf
+   *   - --copy-ext 匹配的文件复制到 <outputDir>/<相对路径>
+   *   - --copy-dir 匹配的目录被递归扫描：
+   *       · 其中的 .md 会被转换为 PDF
+   *       · 其他文件全部复制到 <outputDir>/<相对路径>
+   * 不指定则维持原行为：PDF 与源文件同目录。
+   */
+  outputDir?: string;
+  /** 输出 PDF 文件名后缀（不含 .pdf），如 "-v2" → doc-v2.pdf */
   suffix: string;
+  /** 忽略的目录/文件名 */
   ignore: string[];
+  /** 并发数 */
   concurrency: number;
+  /** 跳过已存在的 PDF 和复制文件 */
   skipExisting: boolean;
+  /** 全局要复制的文件扩展名（小写、不含点），如 ["pdf", "txt"] */
+  copyExts: string[];
+  /** 要递归扫描的目录名，如 ["c", "assets"] */
+  copyDirs: string[];
+  /** 传给每个文件的转换参数 */
   convert: Omit<ConvertOptions, "input" | "output">;
 }
