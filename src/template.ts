@@ -20,24 +20,21 @@ const FORMAT_MAP: Record<string, string> = {
   eot: "embedded-opentype",
 };
 
-/** 支持的扩展名，按优先级排列（woff2 体积最小） */
+/** 支持的扩展名，按优先级排列 */
 const FONT_EXTS = ["woff2", "woff", "otf", "ttf", "eot"];
 
 // ────────────────────────────────────────────────────────────
-// 模块级缓存：同一个进程内只做一次磁盘读取 + base64 编码
+// 字体缓存
 // ────────────────────────────────────────────────────────────
 
-/** 字体文件路径 → base64 data URI */
 const FONT_DATA_URI_CACHE = new Map<string, string>();
 
-/** options 关键字段 → 内嵌结果（族名列表 + 拼接好的 CSS） */
 interface FontEmbedResult {
   families: string[];
   css: string;
 }
 const FONT_EMBED_CACHE = new Map<string, FontEmbedResult>();
 
-/** 用 options 中影响字体选择的字段构成缓存 key */
 function embedCacheKey(options: ConvertOptions): string {
   return [options.fontDir ?? "", options.documentFont ?? "", options.codeFont ?? ""].join("\u0000");
 }
@@ -52,7 +49,6 @@ interface FontToEmbed {
   file: string;
 }
 
-/** 归一化：小写、去空格、去连字符、去下划线，用于宽松比较 */
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[\s\-_]/g, "");
 }
@@ -98,12 +94,6 @@ function findFontFile(entries: FontFile[], query: string): FontFile | null {
   return entries.find((e) => normalize(e.baseName) === norm) ?? null;
 }
 
-/**
- * 字体文件 → base64 data URI（带缓存）。
- *
- * 缓存粒度为文件路径。同一进程内同一路径只读取/编码一次，
- * 批量转换时后续文件直接命中缓存。
- */
 function fontToDataUri(filePath: string): string | null {
   const cached = FONT_DATA_URI_CACHE.get(filePath);
   if (cached !== undefined) return cached;
@@ -153,9 +143,6 @@ function parseFontFamilies(fontSpec: string): string[] {
     .filter(Boolean);
 }
 
-/**
- * 收集本次要内嵌到 CSS 的字体（实际在 fontDir 中匹配到的）。
- */
 function collectFontsToEmbed(options: ConvertOptions): FontToEmbed[] {
   if (!options.fontDir) return [];
 
@@ -183,15 +170,6 @@ function collectFontsToEmbed(options: ConvertOptions): FontToEmbed[] {
   return result;
 }
 
-/**
- * 计算并缓存字体内嵌结果。
- *
- * 同一批批量转换里 options 的字体字段都一样，因此只计算一次：
- *   1. 一次目录扫描
- *   2. 一次文件读取 + base64 编码
- *   3. 一次 @font-face CSS 字符串拼接
- * 后续所有文件直接复用 cache 中的 css / families。
- */
 function getFontEmbed(options: ConvertOptions): FontEmbedResult {
   const key = embedCacheKey(options);
   const cached = FONT_EMBED_CACHE.get(key);
@@ -214,21 +192,92 @@ function getFontEmbed(options: ConvertOptions): FontEmbedResult {
   return result;
 }
 
-/** 对外：本次会在 HTML 中内嵌的自定义字体族名列表 */
 export function getCustomFontFamilies(options: ConvertOptions): string[] {
   return getFontEmbed(options).families;
 }
 
-/** 生成 @font-face CSS（带缓存） */
 function buildFontFaces(options: ConvertOptions): string {
   return getFontEmbed(options).css;
 }
+
+// ────────────────────────────────────────────────────────────
+// 水印
+// ────────────────────────────────────────────────────────────
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * 生成水印层。
+ *
+ * 水印层用 position: fixed 覆盖整页；Chromium 打印为 PDF 时会为每一页
+ * 重复渲染 fixed 元素，因此无需为分页做任何额外处理。
+ *
+ * 三种布局共用 .watermark-layer 容器和 .wm-item 文字元素，
+ * 通过附加的布局类决定具体排列方式。
+ */
+function buildWatermarkLayer(options: ConvertOptions): string {
+  const wm = options.watermark;
+  if (!wm || !wm.text.trim()) return "";
+
+  const opacity = wm.opacity ?? 0.15;
+  const fontSize = wm.fontSize ?? 36;
+  const color = wm.color ?? "#999999";
+  const angle = wm.angle ?? -30;
+  const borderRadius = wm.borderRadius ?? 12;
+  const borderWidth = wm.borderWidth ?? 4;
+  const text = escapeHtml(wm.text);
+
+  const styleVars =
+    `--wm-font-size:${fontSize}pt;` +
+    `--wm-color:${color};` +
+    `--wm-opacity:${opacity};` +
+    `--wm-angle:${angle}deg;` +
+    `--wm-radius:${borderRadius}px;` +
+    `--wm-border-width:${borderWidth}px;`;
+
+  if (wm.layout === "diagonal") {
+    return `<div class="watermark-layer watermark-diagonal" style="${styleVars}" aria-hidden="true">
+  <div class="wm-item">${text}</div>
+</div>`;
+  }
+
+  if (wm.layout === "stamp") {
+    return `<div class="watermark-layer watermark-stamp" style="${styleVars}" aria-hidden="true">
+  <div class="wm-item">${text}</div>
+</div>`;
+  }
+
+  // tile：多行交错
+  const ROWS = 5;
+  const COLS = 4;
+  const cells: string[] = [];
+  for (let r = 0; r < ROWS; r++) {
+    const odd = r % 2 === 1 ? " wm-odd" : "";
+    for (let c = 0; c < COLS; c++) {
+      cells.push(`<div class="wm-item${odd}">${text}</div>`);
+    }
+  }
+  return `<div class="watermark-layer watermark-tile" style="${styleVars}" aria-hidden="true">
+  ${cells.join("\n  ")}
+</div>`;
+}
+
+// ────────────────────────────────────────────────────────────
+// 主模板
+// ────────────────────────────────────────────────────────────
 
 export function buildHtml(bodyHtml: string, highlightCss: string, options: ConvertOptions): string {
   const docFont = options.documentFont || "'Helvetica Neue', Arial, sans-serif";
   const codeFont = options.codeFont || "'JetBrains Mono', 'Fira Code', monospace";
   const baseSize = options.fontSize || 11;
   const fontFaces = buildFontFaces(options);
+  const watermarkLayer = buildWatermarkLayer(options);
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -255,6 +304,7 @@ body {
   max-width: 100%;
   padding: 0;
   margin: 0;
+  position: relative;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -327,10 +377,80 @@ blockquote {
 img { max-width: 100%; height: auto; }
 
 .page-break { page-break-before: always; }
+
+/* ─────────────────────────────────────────────
+   水印
+   ───────────────────────────────────────────── */
+
+.watermark-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+  z-index: 9999;
+  overflow: hidden;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.watermark-layer .wm-item {
+  font-family: var(--doc-font);
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--wm-color);
+  opacity: var(--wm-opacity);
+  font-size: var(--wm-font-size);
+  letter-spacing: 0.15em;
+  line-height: 1;
+  padding: 4px 10px;
+}
+
+/* ── 居中斜线一行 ── */
+.watermark-diagonal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.watermark-diagonal .wm-item {
+  transform: rotate(var(--wm-angle));
+}
+
+/* ── 居中印章（带边框） ── */
+.watermark-stamp {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.watermark-stamp .wm-item {
+  border: var(--wm-border-width) solid var(--wm-color);
+  border-radius: var(--wm-radius);
+  padding: 0.35em 0.9em;
+  letter-spacing: 0.25em;
+  /* 让边框也使用 opacity，与文字保持一致 */
+  transform: rotate(var(--wm-angle));
+  /* 印章通常角度小、甚至为 0，用 inset 让边框紧贴文字 */
+  box-shadow: inset 0 0 0 0 var(--wm-color);
+}
+
+/* ── 多行交错 ── */
+.watermark-tile {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(5, 1fr);
+  place-items: center;
+  gap: 8px;
+}
+.watermark-tile .wm-item {
+  transform: rotate(var(--wm-angle));
+}
+.watermark-tile .wm-item.wm-odd {
+  transform: translateX(22%) rotate(var(--wm-angle));
+}
 </style>
 </head>
 <body>
 ${bodyHtml}
+${watermarkLayer}
 </body>
 </html>`;
 }

@@ -1,12 +1,11 @@
 {
   "name": "md2pdf",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "bin": "./bin/cli.ts",
   "type": "module",
   "scripts": {
-    "start": "./bin/cli.ts --concurrency=4 --font-dir='./fonts' --doc-font='AlibabaPuHuiTi-3-55-Regular' --code-font='MapleMonoNormalNL-CN-Regular'",
-    "postinstall": "bun x puppeteer browsers install chrome-headless-shell",
-    "compile": "bun build ./src/index.ts --compile --outfile md-to-pdf"
+    "start": "./bin/cli.ts --concurrency=4 --font-dir=./fonts --doc-font=AlibabaPuHuiTi-3-55-Regular --code-font=MapleMonoNormalNL-CN-Regular --watermark-layout=diagonal --watermark-font-size=100 --watermark-angle=315",
+    "postinstall": "bun x puppeteer browsers install chrome-headless-shell"
   },
   "dependencies": {
     "highlight.js": "^11.11.1",

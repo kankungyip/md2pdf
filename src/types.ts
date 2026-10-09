@@ -1,3 +1,29 @@
+export type WatermarkLayout = "tile" | "diagonal" | "stamp";
+
+export interface WatermarkOptions {
+  /** 水印文本 */
+  text: string;
+  /**
+   * 显示方式：
+   *   - tile       多行交错，铺满整页
+   *   - diagonal   居中斜线一行（angle 设为 0 即为横线一行）
+   *   - stamp      居中印章，带圆角边框
+   */
+  layout: WatermarkLayout;
+  /** 不透明度，0-1，默认 0.15 */
+  opacity?: number;
+  /** 字号（pt），默认 36 */
+  fontSize?: number;
+  /** 颜色，任意 CSS 颜色值，默认 #999999 */
+  color?: string;
+  /** 旋转角度（度），默认 -30。stamp 布局建议设为 0 */
+  angle?: number;
+  /** 边框圆角半径（px），仅 stamp 布局生效，默认 12 */
+  borderRadius?: number;
+  /** 边框宽度（px），仅 stamp 布局生效，默认 4 */
+  borderWidth?: number;
+}
+
 export interface ConvertOptions {
   input: string;
   output: string;
@@ -41,6 +67,7 @@ export interface ConvertOptions {
   mermaidTheme?: string;
   /** chrome-headless-shell 可执行文件路径，不传则自动查找 */
   executablePath?: string;
+  watermark?: WatermarkOptions;
 }
 
 export interface BatchOptions {
